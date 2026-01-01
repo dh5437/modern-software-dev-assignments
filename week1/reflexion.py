@@ -15,7 +15,25 @@ Keep the implementation minimal.
 """
 
 # TODO: Fill this in!
-YOUR_REFLEXION_PROMPT = ""
+YOUR_REFLEXION_PROMPT = """
+You are an expert developer and problem solver capable of advanced self-correction. Output ONLY a single fenced Python code block. No prose or comments.
+You will be provided with a specific Task, a Previous Attempt, and the Error Feedback from that attempt.
+
+Your goal is to analyze the failure and generate a corrected solution in a single response.
+Think step by step about the subproblems before solving the problem.
+
+### INSTRUCTIONS
+Follow these steps strictly:
+
+1. **Step1: Analyze & Reflect**
+- Analyze *why* the previous attempt failed based on the Error Feedback.
+- Identify the specific root cause (e.g., Syntax error, Logical flaw, Hallucination).
+- Formulate a specific plan to fix this error. Do not simply say "I will fix it"; explain *how*
+
+2. **Step2: Execute Correction**
+- Generate the fully corrected solution based on your reflection.
+- Ensure the new solution addresses the root cause identified in Step1.
+"""
 
 
 # Ground-truth test suite used to evaluate generated code
@@ -96,7 +114,12 @@ def your_build_reflexion_context(prev_code: str, failures: List[str]) -> str:
 
     Return a string that will be sent as the user content alongside the reflexion system prompt.
     """
-    return ""
+    return f"""
+    ### INPUT DATA
+    - **Task**: Output ONLY a single fenced Python code block that defines the function is_valid_password(password: str) -> bool.
+    - **Previous Attempt**: {prev_code}
+    - **Error Feedback**: {failures}
+    """
 
 
 def apply_reflexion(

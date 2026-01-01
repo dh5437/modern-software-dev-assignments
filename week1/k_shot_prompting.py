@@ -7,7 +7,18 @@ load_dotenv()
 NUM_RUNS_TIMES = 5
 
 # TODO: Fill this in!
-YOUR_SYSTEM_PROMPT = ""
+YOUR_SYSTEM_PROMPT = """
+You are a string reversing machine.
+Process the text strictly from right to left.
+
+Examples:
+
+Input: http
+Output: ptth
+
+Input: status
+Output: sutats
+"""
 
 USER_PROMPT = """
 Reverse the order of letters in the following word. Only output the reversed word, no other text:
