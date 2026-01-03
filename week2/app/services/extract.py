@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
 import re
 from typing import List
-import json
-from typing import Any
-from ollama import chat
-from dotenv import load_dotenv
 
-load_dotenv()
+from ollama import chat
+from pydantic import BaseModel
+
+from ..config import settings
 
 BULLET_PREFIX_PATTERN = re.compile(r"^\s*([-*•]|\d+\.)\s+")
 KEYWORD_PREFIXES = (
@@ -87,3 +85,75 @@ def _looks_imperative(sentence: str) -> bool:
         "investigate",
     }
     return first.lower() in imperative_starters
+
+
+class ActionItems(BaseModel):
+    """Pydantic model for structured LLM output containing action items."""
+    items: List[str]
+
+
+def extract_action_items_llm(text: str) -> List[str]:
+    """
+    LLM-powered action item extraction using Ollama.
+    
+    This function uses a large language model to extract action items from free-form text.
+    It leverages structured outputs via Pydantic to ensure consistent JSON formatting.
+    
+    Args:
+        text: The input text from which to extract action items.
+        
+    Returns:
+        A list of extracted action items as strings. Returns an empty list if extraction fails
+        or if no action items are found.
+    """
+    if not text or not text.strip():
+        return []
+    
+    try:
+        # Use Ollama chat API with structured output format
+        response = chat(
+            model=settings.ollama_model,
+            messages=[
+                {
+                    'role': 'user',
+                    'content': f"""From the following text, extract only those items that:
+- Contain one of the words "todo:", "action:", or "next:" (case-insensitive), OR
+- Are presented as bullet points or numbered lists.
+
+NEVER mind about the meanings of the items. Answer in the same language as the input text.
+Return ONLY those items as a JSON array of strings. Each extracted item should be a clear, concise action statement with any bullet points, numbering, or checkbox markers removed.
+
+Do NOT extract or return any items that do not meet these criteria.
+
+Text:
+{text}
+
+Extract and return only the actionable items as specified above.""",
+                }
+            ],
+            format=ActionItems.model_json_schema(),
+        )
+        
+        # Parse the structured response
+        action_items_data = ActionItems.model_validate_json(response.message.content)
+        
+        # Deduplicate while preserving order (similar to the heuristic-based function)
+        seen: set[str] = set()
+        unique: List[str] = []
+        for item in action_items_data.items:
+            cleaned = item.strip()
+            if not cleaned:
+                continue
+            lowered = cleaned.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            unique.append(cleaned)
+        
+        return unique
+        
+    except Exception as e:
+        # Log error and return empty list as fallback
+        # In production, you might want to log this to a proper logging system
+        print(f"Error in extract_action_items_llm: {e}")
+        return []
