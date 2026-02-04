@@ -81,13 +81,13 @@ Example Claude Desktop configuration entry:
 This server implements MCP Authorization (Protocol Revision 2025-06-18) with:
 - Protected resource metadata: `/.well-known/oauth-protected-resource`
 - Authorization server metadata: `/.well-known/oauth-authorization-server`
-- Dynamic client registration: `POST /register`
+- Dynamic client registration: `codex mcp login slackApi`
 - Authorization Code + PKCE (S256)
 
 Codex flow (high level):
 1) Codex discovers `/.well-known/oauth-protected-resource` from `WWW-Authenticate`.
 2) Codex fetches `/.well-known/oauth-authorization-server` for endpoints.
-3) Codex registers a client via `POST /register`.
+3) Codex registers a client via `codex mcp login slackApi`.
 4) Codex redirects to `/oauth/authorize` for a code.
 5) Codex exchanges code at `/oauth/token` for a Bearer token.
 6) Codex calls `/mcp` with `Authorization: Bearer <access_token>`.
@@ -96,6 +96,7 @@ Notes:
 - Tokens are in-memory only (server restart clears them).
 - `resource` is `http://127.0.0.1:8000/mcp`.
 - Access tokens are accepted only via the Authorization header (no query string).
+- If you see `invalid_client` (missing `client_id`) or `refresh_token_expired`, re-run `codex mcp login slackApi`.
 
 ## Tools
 ### Slack OAuth and scopes

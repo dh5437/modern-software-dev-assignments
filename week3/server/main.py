@@ -38,6 +38,7 @@ MAX_BODY_BYTES = _int_env("MCP_MAX_BODY_BYTES", 1_000_000)
 DEFAULT_HTTP_PORT = _int_env("MCP_PORT", 8000)
 OAUTH_CODE_TTL = _int_env("MCP_OAUTH_CODE_TTL", 600)
 OAUTH_TOKEN_TTL = _int_env("MCP_OAUTH_TOKEN_TTL", 3600)
+OAUTH_REFRESH_TOKEN_TTL = _int_env("MCP_OAUTH_REFRESH_TOKEN_TTL", 819300)
 
 BASE_URL = "http://127.0.0.1:8000"
 RESOURCE_URL = f"{BASE_URL}{DEFAULT_HTTP_PATH}"
@@ -54,6 +55,7 @@ class JsonRpcPayload(RootModel[dict[str, Any] | list[Any]]):
 
 AUTH_CODES: Dict[str, Dict[str, Any]] = {}
 ACCESS_TOKENS: Dict[str, Dict[str, Any]] = {}
+REFRESH_TOKENS: Dict[str, Dict[str, Any]] = {}
 CLIENTS: Dict[str, Dict[str, Any]] = {}
 
 
@@ -73,6 +75,8 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "Bearer"
     expires_in: int
+    refresh_token: Optional[str] = None
+    refresh_expires_in: Optional[int] = None
 
 
 def _parse_allowed_origins() -> Optional[Set[str]]:
@@ -166,6 +170,18 @@ def _json_error(status: int, code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content=mcp_core.json_rpc_error(code, message, None))
 
 
+def _invalid_client_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=HTTPStatus.BAD_REQUEST,
+        content={
+            "error": "invalid_client",
+            "error_description": "Client not found. Re-register with `codex mcp login slackApi` to obtain a new client_id and retry.",
+            "registration_endpoint": f"{BASE_URL}/register",
+            "next_action": "register",
+        },
+    )
+
+
 def _sse_stream(responses: Iterable[dict[str, Any]]) -> Iterable[bytes]:
     for response in responses:
         data = json.dumps(response)
@@ -215,6 +231,18 @@ def _pkce_s256(verifier: str) -> str:
 def _unauthorized_response() -> Response:
     headers = {"WWW-Authenticate": f'Bearer resource_metadata="{BASE_URL}/.well-known/oauth-protected-resource"'}
     return Response(status_code=HTTPStatus.UNAUTHORIZED, headers=headers)
+
+
+def _refresh_token_expired_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=HTTPStatus.BAD_REQUEST,
+        content={
+            "error": "refresh_token_expired",
+            "error_description": "Refresh token expired. Re-register with `codex mcp login slackApi` to obtain a new refresh token and retry.",
+            "registration_endpoint": f"{BASE_URL}/register",
+            "next_action": "register",
+        },
+    )
 
 
 @app.post(DEFAULT_HTTP_PATH, response_model=None)
@@ -300,7 +328,7 @@ async def oauth_metadata() -> Response:
             "token_endpoint": f"{BASE_URL}/oauth/token",
             "registration_endpoint": f"{BASE_URL}/register",
             "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
             "code_challenge_methods_supported": ["S256"],
             "token_endpoint_auth_methods_supported": ["none"],
         }
@@ -344,7 +372,7 @@ async def oauth_register(request: Request) -> Response:
         client_id=client_id,
         redirect_uris=payload.redirect_uris,
         token_endpoint_auth_method="none",
-        grant_types=["authorization_code"],
+        grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
     )
     return JSONResponse(response.model_dump())
@@ -365,7 +393,7 @@ async def oauth_authorize(request: Request) -> Response:
 
     client = _client_for_id(client_id)
     if client is None:
-        return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_client"})
+        return _invalid_client_response()
     if response_type != "code":
         return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "unsupported_response_type"})
     if not _redirect_uri_registered(client, redirect_uri):
@@ -405,38 +433,84 @@ async def oauth_token(request: Request) -> Response:
     grant_type = data.get("grant_type")
     code = data.get("code")
     client_id = data.get("client_id")
+    refresh_token = data.get("refresh_token")
     redirect_uri = data.get("redirect_uri")
     code_verifier = data.get("code_verifier")
     resource = _resource_or_default(data.get("resource"))
 
-    if grant_type != "authorization_code":
+    if grant_type not in {"authorization_code", "refresh_token"}:
         logger.info("oauth/token failed: unsupported_grant_type")
         return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "unsupported_grant_type"})
     client = _client_for_id(client_id)
     if client is None:
         logger.info("oauth/token failed: invalid_client")
-        return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_client"})
-    if not _redirect_uri_registered(client, redirect_uri):
-        logger.info("oauth/token failed: invalid_redirect_uri")
-        return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_redirect_uri"})
-    if not isinstance(code, str) or not code or not isinstance(code_verifier, str) or not code_verifier:
+        return _invalid_client_response()
+    if grant_type == "authorization_code":
+        if not _redirect_uri_registered(client, redirect_uri):
+            logger.info("oauth/token failed: invalid_redirect_uri")
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_redirect_uri"})
+        if not isinstance(code, str) or not code or not isinstance(code_verifier, str) or not code_verifier:
+            logger.info("oauth/token failed: invalid_request")
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_request"})
+
+        _prune_expired(AUTH_CODES)
+        entry = AUTH_CODES.pop(code, None)
+        if entry is None or entry["client_id"] != client_id or entry["redirect_uri"] != redirect_uri:
+            logger.info("oauth/token failed: invalid_grant")
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_grant"})
+        if entry["resource"] != resource:
+            logger.info("oauth/token failed: invalid_resource")
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_resource"})
+        if not _resource_ok(resource):
+            logger.info("oauth/token failed: invalid_resource")
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_resource"})
+        if _pkce_s256(code_verifier) != entry["code_challenge"]:
+            logger.info("oauth/token failed: invalid_grant (pkce)")
+            return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_grant"})
+
+        access_token = secrets.token_urlsafe(32)
+        ACCESS_TOKENS[access_token] = {
+            "client_id": client_id,
+            "resource": resource,
+            "expires_at": time.time() + OAUTH_TOKEN_TTL,
+        }
+        refresh_token = secrets.token_urlsafe(32)
+        REFRESH_TOKENS[refresh_token] = {
+            "client_id": client_id,
+            "resource": resource,
+            "expires_at": time.time() + OAUTH_REFRESH_TOKEN_TTL,
+        }
+
+        logger.info("oauth/token success client_id=%s resource=%s", client_id, resource)
+        response = TokenResponse(
+            access_token=access_token,
+            expires_in=OAUTH_TOKEN_TTL,
+            refresh_token=refresh_token,
+            refresh_expires_in=OAUTH_REFRESH_TOKEN_TTL,
+        )
+        return JSONResponse(response.model_dump())
+
+    if not isinstance(refresh_token, str) or not refresh_token:
         logger.info("oauth/token failed: invalid_request")
         return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_request"})
 
-    _prune_expired(AUTH_CODES)
-    entry = AUTH_CODES.pop(code, None)
-    if entry is None or entry["client_id"] != client_id or entry["redirect_uri"] != redirect_uri:
-        logger.info("oauth/token failed: invalid_grant")
+    entry = REFRESH_TOKENS.get(refresh_token)
+    if entry is not None and entry.get("expires_at", 0) <= time.time():
+        logger.info("oauth/token failed: refresh_token_expired")
+        del REFRESH_TOKENS[refresh_token]
+        return _refresh_token_expired_response()
+
+    _prune_expired(REFRESH_TOKENS)
+    entry = REFRESH_TOKENS.pop(refresh_token, None)
+    if entry is None or entry["client_id"] != client_id:
+        logger.info("oauth/token failed: invalid_grant (refresh)")
         return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_grant"})
     if entry["resource"] != resource:
-        logger.info("oauth/token failed: invalid_resource")
+        logger.info("oauth/token failed: invalid_resource (refresh)")
         return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_resource"})
     if not _resource_ok(resource):
         logger.info("oauth/token failed: invalid_resource")
         return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_resource"})
-    if _pkce_s256(code_verifier) != entry["code_challenge"]:
-        logger.info("oauth/token failed: invalid_grant (pkce)")
-        return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"error": "invalid_grant"})
 
     access_token = secrets.token_urlsafe(32)
     ACCESS_TOKENS[access_token] = {
@@ -444,11 +518,19 @@ async def oauth_token(request: Request) -> Response:
         "resource": resource,
         "expires_at": time.time() + OAUTH_TOKEN_TTL,
     }
+    rotated_refresh_token = secrets.token_urlsafe(32)
+    REFRESH_TOKENS[rotated_refresh_token] = {
+        "client_id": client_id,
+        "resource": resource,
+        "expires_at": time.time() + OAUTH_REFRESH_TOKEN_TTL,
+    }
 
-    logger.info("oauth/token success client_id=%s resource=%s", client_id, resource)
+    logger.info("oauth/token refresh success client_id=%s resource=%s", client_id, resource)
     response = TokenResponse(
         access_token=access_token,
         expires_in=OAUTH_TOKEN_TTL,
+        refresh_token=rotated_refresh_token,
+        refresh_expires_in=OAUTH_REFRESH_TOKEN_TTL,
     )
     return JSONResponse(response.model_dump())
 
