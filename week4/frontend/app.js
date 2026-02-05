@@ -1,16 +1,44 @@
 async function fetchJSON(url, options) {
   const res = await fetch(url, options);
   if (!res.ok) throw new Error(await res.text());
+  if (res.status === 204) return null;
   return res.json();
 }
 
-async function loadNotes() {
+async function loadNotes(query = '') {
   const list = document.getElementById('notes');
   list.innerHTML = '';
-  const notes = await fetchJSON('/notes/');
+  const url = query ? `/notes/search/?q=${encodeURIComponent(query)}` : '/notes/';
+  const notes = await fetchJSON(url);
   for (const n of notes) {
     const li = document.createElement('li');
-    li.textContent = `${n.title}: ${n.content}`;
+    const text = document.createElement('span');
+    text.textContent = `${n.title}: ${n.content}`;
+    li.appendChild(text);
+
+    const editBtn = document.createElement('button');
+    editBtn.textContent = 'Edit';
+    editBtn.onclick = async () => {
+      const nextTitle = prompt('New title', n.title);
+      if (nextTitle === null) return;
+      const nextContent = prompt('New content', n.content);
+      if (nextContent === null) return;
+      await fetchJSON(`/notes/${n.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: nextTitle, content: nextContent }),
+      });
+      loadNotes(query);
+    };
+    li.appendChild(editBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.onclick = async () => {
+      await fetchJSON(`/notes/${n.id}`, { method: 'DELETE' });
+      loadNotes(query);
+    };
+    li.appendChild(deleteBtn);
     list.appendChild(li);
   }
 }
@@ -36,6 +64,10 @@ async function loadActions() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  const searchInput = document.getElementById('note-search');
+  const searchForm = document.getElementById('note-search-form');
+  const searchClear = document.getElementById('note-search-clear');
+
   document.getElementById('note-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const title = document.getElementById('note-title').value;
@@ -46,6 +78,16 @@ window.addEventListener('DOMContentLoaded', () => {
       body: JSON.stringify({ title, content }),
     });
     e.target.reset();
+    loadNotes(searchInput.value.trim());
+  });
+
+  searchForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loadNotes(searchInput.value.trim());
+  });
+
+  searchClear.addEventListener('click', async () => {
+    searchInput.value = '';
     loadNotes();
   });
 

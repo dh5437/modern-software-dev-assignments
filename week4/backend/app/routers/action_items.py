@@ -17,6 +17,8 @@ def list_items(db: Session = Depends(get_db)) -> list[ActionItemRead]:
 
 @router.post("/", response_model=ActionItemRead, status_code=201)
 def create_item(payload: ActionItemCreate, db: Session = Depends(get_db)) -> ActionItemRead:
+    if not payload.description.strip():
+        raise HTTPException(status_code=400, detail="Description is required")
     item = ActionItem(description=payload.description, completed=False)
     db.add(item)
     db.flush()
