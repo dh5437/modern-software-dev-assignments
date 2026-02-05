@@ -31,7 +31,7 @@ d. Before vs. after (i.e. manual workflow vs. automated workflow)
 > TODO
 
 e. How you used the automation to enhance the starter application
-> TODO
+> I used the automation to read and execute `/docs/TASKS.md` sequentially. It structured the work into clear steps, reduced manual tracking, and ensured each task was completed in order. Concretely, it added case-insensitive note search, note edit/delete, validation and error handling, improved extraction logic with tags, expanded tests, and updated frontend behavior and API docs.
 
 
 ### Automation #2
@@ -48,7 +48,7 @@ d. Before vs. after (i.e. manual workflow vs. automated workflow)
 > TODO
 
 e. How you used the automation to enhance the starter application
-> TODO
+> I used the automation to read and execute `/docs/TASKS.md` sequentially. It structured the work into clear steps, reduced manual tracking, and ensured each task was completed in order. Concretely, it added case-insensitive note search, note edit/delete, validation and error handling, improved extraction logic with tags, expanded tests, and updated frontend behavior and API docs.
 
 
 ### *(Optional) Automation #3*
@@ -67,4 +67,4 @@ d. Before vs. after (i.e. manual workflow vs. automated workflow)
 > TODO
 
 e. How you used the automation to enhance the starter application
-> TODO
+> I used the automation to read and execute `/docs/TASKS.md` sequentially. It structured the work into clear steps, reduced manual tracking, and ensured each task was completed in order. Concretely, it added case-insensitive note search, note edit/delete, validation and error handling, improved extraction logic with tags, expanded tests, and updated frontend behavior and API docs.
