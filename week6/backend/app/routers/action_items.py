@@ -1,12 +1,12 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import asc, desc, select
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
-from ..db import get_db
+from ..db import get_db, session_get
 from ..models import ActionItem
-from ..schemas import ActionItemCreate, ActionItemPatch, ActionItemRead
+from ..schemas import ActionItemCreate, ActionItemPatch, ActionItemRead, model_to_read
 
 router = APIRouter(prefix="/action-items", tags=["action_items"])
 
@@ -19,19 +19,19 @@ def list_items(
     limit: int = Query(50, le=200),
     sort: str = Query("-created_at"),
 ) -> list[ActionItemRead]:
-    stmt = select(ActionItem)
+    query = db.query(ActionItem)
     if completed is not None:
-        stmt = stmt.where(ActionItem.completed.is_(completed))
+        query = query.filter(ActionItem.completed.is_(completed))
 
     sort_field = sort.lstrip("-")
     order_fn = desc if sort.startswith("-") else asc
     if hasattr(ActionItem, sort_field):
-        stmt = stmt.order_by(order_fn(getattr(ActionItem, sort_field)))
+        query = query.order_by(order_fn(getattr(ActionItem, sort_field)))
     else:
-        stmt = stmt.order_by(desc(ActionItem.created_at))
+        query = query.order_by(desc(ActionItem.created_at))
 
-    rows = db.execute(stmt.offset(skip).limit(limit)).scalars().all()
-    return [ActionItemRead.model_validate(row) for row in rows]
+    rows = query.offset(skip).limit(limit).all()
+    return [model_to_read(ActionItemRead, row) for row in rows]
 
 
 @router.post("/", response_model=ActionItemRead, status_code=201)
@@ -40,24 +40,24 @@ def create_item(payload: ActionItemCreate, db: Session = Depends(get_db)) -> Act
     db.add(item)
     db.flush()
     db.refresh(item)
-    return ActionItemRead.model_validate(item)
+    return model_to_read(ActionItemRead, item)
 
 
 @router.put("/{item_id}/complete", response_model=ActionItemRead)
 def complete_item(item_id: int, db: Session = Depends(get_db)) -> ActionItemRead:
-    item = db.get(ActionItem, item_id)
+    item = session_get(db, ActionItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Action item not found")
     item.completed = True
     db.add(item)
     db.flush()
     db.refresh(item)
-    return ActionItemRead.model_validate(item)
+    return model_to_read(ActionItemRead, item)
 
 
 @router.patch("/{item_id}", response_model=ActionItemRead)
 def patch_item(item_id: int, payload: ActionItemPatch, db: Session = Depends(get_db)) -> ActionItemRead:
-    item = db.get(ActionItem, item_id)
+    item = session_get(db, ActionItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Action item not found")
     if payload.description is not None:
@@ -67,6 +67,4 @@ def patch_item(item_id: int, payload: ActionItemPatch, db: Session = Depends(get
     db.add(item)
     db.flush()
     db.refresh(item)
-    return ActionItemRead.model_validate(item)
-
-
+    return model_to_read(ActionItemRead, item)

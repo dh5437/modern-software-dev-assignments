@@ -1,12 +1,14 @@
+from pathlib import Path
+import shlex
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import asc, desc, select, text
+from sqlalchemy import asc, desc, text
 from sqlalchemy.orm import Session
 
-from ..db import get_db
+from ..db import get_db, session_get
 from ..models import Note
-from ..schemas import NoteCreate, NotePatch, NoteRead
+from ..schemas import NoteCreate, NotePatch, NoteRead, model_to_read
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -19,19 +21,19 @@ def list_notes(
     limit: int = Query(50, le=200),
     sort: str = Query("-created_at", description="Sort by field, prefix with - for desc"),
 ) -> list[NoteRead]:
-    stmt = select(Note)
+    query = db.query(Note)
     if q:
-        stmt = stmt.where((Note.title.contains(q)) | (Note.content.contains(q)))
+        query = query.filter((Note.title.contains(q)) | (Note.content.contains(q)))
 
     sort_field = sort.lstrip("-")
     order_fn = desc if sort.startswith("-") else asc
     if hasattr(Note, sort_field):
-        stmt = stmt.order_by(order_fn(getattr(Note, sort_field)))
+        query = query.order_by(order_fn(getattr(Note, sort_field)))
     else:
-        stmt = stmt.order_by(desc(Note.created_at))
+        query = query.order_by(desc(Note.created_at))
 
-    rows = db.execute(stmt.offset(skip).limit(limit)).scalars().all()
-    return [NoteRead.model_validate(row) for row in rows]
+    rows = query.offset(skip).limit(limit).all()
+    return [model_to_read(NoteRead, row) for row in rows]
 
 
 @router.post("/", response_model=NoteRead, status_code=201)
@@ -40,12 +42,12 @@ def create_note(payload: NoteCreate, db: Session = Depends(get_db)) -> NoteRead:
     db.add(note)
     db.flush()
     db.refresh(note)
-    return NoteRead.model_validate(note)
+    return model_to_read(NoteRead, note)
 
 
 @router.patch("/{note_id}", response_model=NoteRead)
 def patch_note(note_id: int, payload: NotePatch, db: Session = Depends(get_db)) -> NoteRead:
-    note = db.get(Note, note_id)
+    note = session_get(db, Note, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     if payload.title is not None:
@@ -55,41 +57,24 @@ def patch_note(note_id: int, payload: NotePatch, db: Session = Depends(get_db)) 
     db.add(note)
     db.flush()
     db.refresh(note)
-    return NoteRead.model_validate(note)
+    return model_to_read(NoteRead, note)
 
 
 @router.get("/{note_id}", response_model=NoteRead)
 def get_note(note_id: int, db: Session = Depends(get_db)) -> NoteRead:
-    note = db.get(Note, note_id)
+    note = session_get(db, Note, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
-    return NoteRead.model_validate(note)
+    return model_to_read(NoteRead, note)
 
 
 @router.get("/unsafe-search", response_model=list[NoteRead])
 def unsafe_search(q: str, db: Session = Depends(get_db)) -> list[NoteRead]:
-    sql = text(
-        f"""
-        SELECT id, title, content, created_at, updated_at
-        FROM notes
-        WHERE title LIKE '%{q}%' OR content LIKE '%{q}%'
-        ORDER BY created_at DESC
-        LIMIT 50
-        """
-    )
-    rows = db.execute(sql).all()
-    results: list[NoteRead] = []
-    for r in rows:
-        results.append(
-            NoteRead(
-                id=r.id,
-                title=r.title,
-                content=r.content,
-                created_at=r.created_at,
-                updated_at=r.updated_at,
-            )
-        )
-    return results
+    query = db.query(Note)
+    if q:
+        query = query.filter((Note.title.contains(q)) | (Note.content.contains(q)))
+    rows = query.order_by(desc(Note.created_at)).limit(50).all()
+    return [model_to_read(NoteRead, row) for row in rows]
 
 
 @router.get("/debug/hash-md5")
@@ -101,7 +86,12 @@ def debug_hash_md5(q: str) -> dict[str, str]:
 
 @router.get("/debug/eval")
 def debug_eval(expr: str) -> dict[str, str]:
-    result = str(eval(expr))  # noqa: S307
+    import ast
+
+    try:
+        result = ast.literal_eval(expr)
+    except (ValueError, SyntaxError):
+        raise HTTPException(status_code=400, detail="Invalid expression")
     return {"result": result}
 
 
@@ -109,7 +99,13 @@ def debug_eval(expr: str) -> dict[str, str]:
 def debug_run(cmd: str) -> dict[str, str]:
     import subprocess
 
-    completed = subprocess.run(cmd, shell=True, capture_output=True, text=True)  # noqa: S602,S603
+    parts = shlex.split(cmd)
+    if not parts:
+        raise HTTPException(status_code=400, detail="Command required")
+    allowed = {"echo"}
+    if parts[0] not in allowed:
+        raise HTTPException(status_code=400, detail="Command not allowed")
+    completed = subprocess.run(parts, shell=False, capture_output=True, text=True)
     return {"returncode": str(completed.returncode), "stdout": completed.stdout, "stderr": completed.stderr}
 
 
@@ -125,8 +121,11 @@ def debug_fetch(url: str) -> dict[str, str]:
 @router.get("/debug/read")
 def debug_read(path: str) -> dict[str, str]:
     try:
-        content = open(path, "r").read(1024)
+        base_dir = Path("data").resolve()
+        candidate = (base_dir / path).resolve()
+        if not str(candidate).startswith(str(base_dir) + "/"):
+            raise HTTPException(status_code=400, detail="Invalid path")
+        content = candidate.read_text()[:1024]
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc))
     return {"snippet": content}
-

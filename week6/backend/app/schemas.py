@@ -16,6 +16,7 @@ class NoteRead(BaseModel):
     updated_at: datetime
 
     class Config:
+        orm_mode = True
         from_attributes = True
 
 
@@ -36,6 +37,7 @@ class ActionItemRead(BaseModel):
     updated_at: datetime
 
     class Config:
+        orm_mode = True
         from_attributes = True
 
 
@@ -43,4 +45,9 @@ class ActionItemPatch(BaseModel):
     description: str | None = None
     completed: bool | None = None
 
+
+def model_to_read(schema_cls: type[BaseModel], obj: object) -> BaseModel:
+    if hasattr(schema_cls, "model_validate"):
+        return schema_cls.model_validate(obj)
+    return schema_cls.from_orm(obj)
 

@@ -1,7 +1,10 @@
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
-from sqlalchemy.orm import declarative_base
+try:
+    from sqlalchemy.orm import declarative_base
+except ImportError:  # pragma: no cover - compatibility for older SQLAlchemy
+    from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
@@ -27,5 +30,4 @@ class ActionItem(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, index=True)
     description = Column(Text, nullable=False)
     completed = Column(Boolean, default=False, nullable=False)
-
 

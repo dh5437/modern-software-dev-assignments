@@ -27,6 +27,12 @@ def get_db() -> Iterator[Session]:
         session.close()
 
 
+def session_get(session: Session, model: type, pk: int) -> object | None:
+    if hasattr(session, "get"):
+        return session.get(model, pk)
+    return session.query(model).get(pk)
+
+
 @contextmanager
 def get_session() -> Iterator[Session]:
     session = SessionLocal()
@@ -54,5 +60,4 @@ def apply_seed_if_needed() -> None:
             if sql.strip():
                 for statement in [s.strip() for s in sql.split(";") if s.strip()]:
                     conn.execute(text(statement))
-
 
