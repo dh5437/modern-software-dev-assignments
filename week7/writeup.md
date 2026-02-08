@@ -9,7 +9,7 @@ Fill out all of the `TODO`s in this file.
 
 ## Submission Details
 
-Name: **TODO** \
+Name: **Jake Kim** \
 SUNet ID: **TODO** \
 Citations: **TODO**
 
@@ -68,5 +68,4 @@ c. When the AI reviews were better/worse than yours (cite specific examples)
 
 d. Your comfort level trusting AI reviews going forward and any heuristics for when to rely on them.
 >TODO 
-
 
