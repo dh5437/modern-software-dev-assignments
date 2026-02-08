@@ -4,9 +4,8 @@ from pydantic import BaseModel, Field
 
 
 class NoteCreate(BaseModel):
-    title: str
-    content: str
-    project_id: int | None = None
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1)
 
 
 class NoteRead(BaseModel):
@@ -53,7 +52,7 @@ def to_read(model, obj):
 
 
 class ActionItemPatch(BaseModel):
-    description: str | None = None
+    description: str | None = Field(None, min_length=1)
     completed: bool | None = None
     project_id: int | None = None
 

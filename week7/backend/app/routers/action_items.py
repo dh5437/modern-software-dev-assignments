@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
@@ -27,9 +27,8 @@ def _get_project(db: Session, project_id: int) -> Project | None:
 def list_items(
     db: Session = Depends(get_db),
     completed: Optional[bool] = None,
-    project_id: Optional[int] = None,
-    skip: int = 0,
-    limit: int = Query(50, le=200),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     sort: str = Query("-created_at"),
 ) -> list[ActionItemRead]:
     query = db.query(ActionItem)
@@ -39,11 +38,11 @@ def list_items(
         query = query.filter(ActionItem.project_id == project_id)
 
     sort_field = sort.lstrip("-")
+    allowed_sort_fields = {"id", "description", "completed", "created_at", "updated_at"}
+    if sort_field not in allowed_sort_fields:
+        raise HTTPException(status_code=400, detail="Invalid sort field")
     order_fn = desc if sort.startswith("-") else asc
-    if hasattr(ActionItem, sort_field):
-        query = query.order_by(order_fn(getattr(ActionItem, sort_field)))
-    else:
-        query = query.order_by(desc(ActionItem.created_at))
+    query = query.order_by(order_fn(getattr(ActionItem, sort_field)))
 
     rows = query.offset(skip).limit(limit).all()
     return [to_read(ActionItemRead, row) for row in rows]
@@ -81,6 +80,8 @@ def patch_item(item_id: int, payload: ActionItemPatch, db: Session = Depends(get
     item = _get_by_id(db, ActionItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Action item not found")
+    if payload.description is None and payload.completed is None:
+        raise HTTPException(status_code=400, detail="No fields provided")
     if payload.description is not None:
         item.description = payload.description
     if payload.completed is not None:
@@ -93,3 +94,21 @@ def patch_item(item_id: int, payload: ActionItemPatch, db: Session = Depends(get
     db.flush()
     db.refresh(item)
     return to_read(ActionItemRead, item)
+
+
+@router.get("/{item_id}", response_model=ActionItemRead)
+def get_item(item_id: int, db: Session = Depends(get_db)) -> ActionItemRead:
+    item = _get_by_id(db, ActionItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Action item not found")
+    return to_read(ActionItemRead, item)
+
+
+@router.delete("/{item_id}", status_code=204)
+def delete_item(item_id: int, db: Session = Depends(get_db)) -> Response:
+    item = _get_by_id(db, ActionItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Action item not found")
+    db.delete(item)
+    db.flush()
+    return Response(status_code=204)
