@@ -51,3 +51,24 @@ def test_note_validation_and_sort_errors(client):
     r = client.get("/notes/", params={"sort": "-nope"})
     assert r.status_code == 400
 
+def test_notes_pagination_and_sorting(client):
+    titles = ["Alpha", "Bravo", "Charlie", "Delta"]
+    for title in titles:
+        r = client.post("/notes/", json={"title": title, "content": f"{title} body"})
+        assert r.status_code == 201, r.text
+
+    r = client.get("/notes/", params={"sort": "title", "limit": 2, "skip": 0})
+    assert r.status_code == 200
+    page1 = r.json()
+    assert [item["title"] for item in page1] == ["Alpha", "Bravo"]
+
+    r = client.get("/notes/", params={"sort": "title", "limit": 2, "skip": 2})
+    assert r.status_code == 200
+    page2 = r.json()
+    assert [item["title"] for item in page2] == ["Charlie", "Delta"]
+
+    r = client.get("/notes/", params={"sort": "-title", "limit": 1, "skip": 0})
+    assert r.status_code == 200
+    page_desc = r.json()
+    assert page_desc[0]["title"] == "Delta"
+
