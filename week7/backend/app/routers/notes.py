@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
@@ -21,8 +21,8 @@ def _get_by_id(db: Session, model, item_id: int):
 def list_notes(
     db: Session = Depends(get_db),
     q: Optional[str] = None,
-    skip: int = 0,
-    limit: int = Query(50, le=200),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     sort: str = Query("-created_at", description="Sort by field, prefix with - for desc"),
 ) -> list[NoteRead]:
     query = db.query(Note)
@@ -30,11 +30,11 @@ def list_notes(
         query = query.filter((Note.title.contains(q)) | (Note.content.contains(q)))
 
     sort_field = sort.lstrip("-")
+    allowed_sort_fields = {"id", "title", "content", "created_at", "updated_at"}
+    if sort_field not in allowed_sort_fields:
+        raise HTTPException(status_code=400, detail="Invalid sort field")
     order_fn = desc if sort.startswith("-") else asc
-    if hasattr(Note, sort_field):
-        query = query.order_by(order_fn(getattr(Note, sort_field)))
-    else:
-        query = query.order_by(desc(Note.created_at))
+    query = query.order_by(order_fn(getattr(Note, sort_field)))
 
     rows = query.offset(skip).limit(limit).all()
     return [to_read(NoteRead, row) for row in rows]
@@ -54,6 +54,8 @@ def patch_note(note_id: int, payload: NotePatch, db: Session = Depends(get_db)) 
     note = _get_by_id(db, Note, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    if payload.title is None and payload.content is None:
+        raise HTTPException(status_code=400, detail="No fields provided")
     if payload.title is not None:
         note.title = payload.title
     if payload.content is not None:
@@ -70,3 +72,13 @@ def get_note(note_id: int, db: Session = Depends(get_db)) -> NoteRead:
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     return to_read(NoteRead, note)
+
+
+@router.delete("/{note_id}", status_code=204)
+def delete_note(note_id: int, db: Session = Depends(get_db)) -> Response:
+    note = _get_by_id(db, Note, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    db.flush()
+    return Response(status_code=204)
