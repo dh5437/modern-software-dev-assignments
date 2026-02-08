@@ -48,13 +48,13 @@ c. Graphite Diamond generated code review
 
 ## Task 4: Improve tests for pagination and sorting
 a. Links to relevant commits/issues
-> TODO
+> Commit: c10d861 (task-test-pagination-sorting)
 
 b. PR Description
-> TODO
+> Added deterministic pagination and sorting tests for notes and action items using title/description ordering. No PR created per instruction; changes are on branch `task-test-pagination-sorting`.
 
 c. Graphite Diamond generated code review
-> TODO
+> Not run (no PR created per instruction).
 
 ## Brief Reflection 
 a. The types of comments you typically made in your manual reviews (e.g., correctness, performance, security, naming, test gaps, API shape, UX, docs).
@@ -68,6 +68,5 @@ c. When the AI reviews were better/worse than yours (cite specific examples)
 
 d. Your comfort level trusting AI reviews going forward and any heuristics for when to rely on them.
 >TODO 
-
 
 
