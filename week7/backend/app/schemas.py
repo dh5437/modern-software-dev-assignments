@@ -12,6 +12,7 @@ class NoteRead(BaseModel):
     id: int
     title: str
     content: str
+    project_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -21,18 +22,21 @@ class NoteRead(BaseModel):
 
 
 class NotePatch(BaseModel):
-    title: str | None = Field(None, min_length=1, max_length=200)
-    content: str | None = Field(None, min_length=1)
+    title: str | None = None
+    content: str | None = None
+    project_id: int | None = None
 
 
 class ActionItemCreate(BaseModel):
-    description: str = Field(..., min_length=1)
+    description: str
+    project_id: int | None = None
 
 
 class ActionItemRead(BaseModel):
     id: int
     description: str
     completed: bool
+    project_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -50,3 +54,26 @@ def to_read(model, obj):
 class ActionItemPatch(BaseModel):
     description: str | None = Field(None, min_length=1)
     completed: bool | None = None
+    project_id: int | None = None
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str | None = None
+
+
+class ProjectRead(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+        orm_mode = True
+
+
+class ProjectPatch(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=120)
+    description: str | None = None

@@ -38,13 +38,13 @@ c. Graphite Diamond generated code review
 
 ## Task 3: Try adding a new model and relationships
 a. Links to relevant commits/issues
-> TODO
+> Commit: 0283772 (task-add-model-relationships)
 
 b. PR Description
-> TODO
+> Added a `Project` model with relationships to notes and action items, plus a projects API. Notes and action items can now be linked to projects and filtered by `project_id`, with tests for linking and validation. No PR created per instruction; changes are on branch `task-add-model-relationships`.
 
 c. Graphite Diamond generated code review
-> TODO
+> Not run (no PR created per instruction).
 
 ## Task 4: Improve tests for pagination and sorting
 a. Links to relevant commits/issues
