@@ -17,6 +17,7 @@ class NoteRead(BaseModel):
 
     class Config:
         from_attributes = True
+        orm_mode = True
 
 
 class NotePatch(BaseModel):
@@ -37,10 +38,16 @@ class ActionItemRead(BaseModel):
 
     class Config:
         from_attributes = True
+        orm_mode = True
+
+
+def to_read(model, obj):
+    if hasattr(model, "model_validate"):
+        return model.model_validate(obj)
+    return model.from_orm(obj)
 
 
 class ActionItemPatch(BaseModel):
     description: str | None = None
     completed: bool | None = None
-
 
