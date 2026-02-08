@@ -28,13 +28,13 @@ c. Graphite Diamond generated code review
 
 ## Task 2: Extend extraction logic
 a. Links to relevant commits/issues
-> TODO
+> Commit: c454a71 (task-extend-extraction)
 
 b. PR Description
-> TODO
+> Expanded action item extraction to support checkboxes, more prefixes (TODO/ACTION/FIXME/NEXT), and imperative phrasing, with updated tests. No PR created per instruction; changes are on branch `task-extend-extraction`.
 
 c. Graphite Diamond generated code review
-> TODO
+> Not run (no PR created per instruction).
 
 ## Task 3: Try adding a new model and relationships
 a. Links to relevant commits/issues
